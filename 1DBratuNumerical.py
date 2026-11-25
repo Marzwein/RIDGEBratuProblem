@@ -1,4 +1,5 @@
 import numpy as np
+import numpy.linalg as lg
 import matplotlib.pyplot as plt
 from scipy.sparse import diags
 from scipy.sparse.linalg import spsolve
@@ -13,12 +14,12 @@ K = 500
 lambdas = np.linspace(0, 3.5, K)
 
 #exact solution stuff
-betas_exact = np.arange(0, 8, 0.1)
+betas_exact = np.arange(0, 10, 0.1)
 lambdas_exact = 2*betas_exact*betas_exact/(np.cosh(0.5*betas_exact)*np.cosh(0.5*betas_exact))
 
 #exact solution for a specific x and beta value
-def exact(x, beta):
-    return 2 * np.log(np.cosh(0.5* beta)/(np.cosh(beta*(x - 0.5))))
+def exact(x_grid, betas):
+    return 2 * np.log(np.cosh(0.5* betas)/(np.cosh(betas*(x_grid - 0.5))))
 
 #Central finite differences
 def CFD(previous, lam):
@@ -37,7 +38,7 @@ def Newton(var, lam, tol = 1e-6, max_itercount = 100):
     F = CFD(var, lam)
     for i in range(max_itercount):
         
-        F_norm = np.linalg.norm(F, ord=np.inf)
+        F_norm = lg.norm(F, ord=np.inf)
         
         #check whether ||u^{i+1} - u^i||_\infty < tol
         if F_norm < tol:
@@ -100,29 +101,63 @@ for lam in lambdas:
     sup_norms.append(np.max(u))
     succ_lambdas.append(lam)
 
+#supremum norm of exact solutions
+sups_exact = 2*np.log(np.cosh(0.5* betas_exact)) #x = 0.5 gives the supremum
+
 #pseudo-arclength continuation
 ds_min = 1e-6
 ds_max = 1e-2
 ds0 = 1e-4
-n_steps = int(2e3)
+n_steps = int(3200)
 solv_par = {"tolerance": 1e-10, "param_min" : 0}
 
-contin_result = pycont.arclengthContinuation(CFD, var, lambdas[0], ds_min, ds_max, ds0, n_steps, solver_parameters=solv_par)
+#get initial 'upper' solution on the sol curve for specific lambda
+var_3, conv = Newton(var_2, 0.5)
+
+#needs a precise solution instead of a mediocre initial guess as input
+contin_result = pycont.arclengthContinuation(CFD, var_3, 0.5, ds_min, ds_max, ds0, n_steps, solver_parameters=solv_par)
+# brs_num = len(contin_result.branches)
 
 #plot bifurcation diagram with (lambda, ||u||_infty)
 u_trans = lambda u : np.sign(u[int(N/2)]) * np.max(np.abs(u))
-pycont.plotBifurcationDiagram(contin_result, u_transform=u_trans, p_label=r'$\lambda$', u_label=r'$\|u\|_\infty$')
+# plt.plot(lambdas_exact, sups_exact, "--", label=["exact solution"])
+# pycont.plotBifurcationDiagram(contin_result, u_transform=u_trans, p_label=r'$\lambda$', u_label=r'$\|u\|_\infty$')
 
-#supremum norm of exact solutions
-sups_exact = 2*np.log(np.cosh(0.5* betas_exact)) #x = 0.5 gives the supremum
+#plot bifurcation diagram with (lambda, ||u||_infty)
+fig, ax = plt.subplots()
 
-#plot
-plt.plot(lambdas_exact, sups_exact, "--", label=["exact solution"])
-plt.plot(succ_lambdas, sup_norms, "-", label=["FD approximation"])
-plt.xlabel("λ")
-plt.ylabel(r"$\|u\|_\infty$")
+ax.plot(lambdas_exact, sups_exact, "b--", label="exact solution")
+
+for i, branch in enumerate(contin_result.branches):
+    lam_num = branch.p_path
+    sup_u_num = np.max(branch.u_path, axis=1)
+    ax.plot(lam_num, sup_u_num, "r-",
+            label="computed solution" if i == 0 else None)
+    
+#colors for the different kinds of points 
+style = {"SP" : 'go', "LP" : 'ko', "BP" : 'ro', "HB": 'mo', "DSFLOOR": 'co'}
+for event in contin_result.events:
+    if event.kind == "LP":
+        ax.plot(event.p, u_trans(event.u), style[event.kind], label="Fold")
+
+ax.set_xlabel(r"$\lambda$")
+ax.set_ylabel(r"$\|u\|_{\infty}$")
 plt.xlim(0, 4)
 plt.ylim(0,)
 plt.title("Bratu bifurcation diagram for a 3-point FD stencil")
-plt.grid(True)
-plt.show()   
+ax.legend()
+
+
+
+
+
+#plot
+# plt.plot(lambdas_exact, sups_exact, "--", label=["exact solution"])
+# plt.plot(succ_lambdas, sup_norms, "-", label=["FD approximation"])
+# plt.xlabel("λ")
+# plt.ylabel(r"$\|u\|_\infty$")
+# plt.xlim(0, 4)
+# plt.ylim(0,)
+# plt.title("Bratu bifurcation diagram for a 3-point FD stencil")
+# plt.grid(True)
+# plt.show()   
